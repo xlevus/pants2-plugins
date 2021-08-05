@@ -1,0 +1,10 @@
+[GLOBAL]
+pants_version = "2.6.0"
+
+[source]
+root_patterns = [
+    "src/",
+]
+
+[anonymous-telemetry]
+enabled = false
