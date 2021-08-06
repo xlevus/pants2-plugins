@@ -1,9 +1,26 @@
 [GLOBAL]
 pants_version = "2.6.0"
+pythonpath = [
+    "%(buildroot)s/src"
+]
+
+backend_packages = [
+    "pants.backend.python",
+    "pants.backend.python.lint.flake8",
+    "pants.backend.python.lint.black",
+    "pants.backend.python.lint.isort",
+    "pants.backend.shell",
+    "pants.backend.shell.lint.shfmt",
+    "pants.backend.shell.lint.shellcheck",
+    "xlvs.pants.docker",
+ ]
+
+plugins = []
 
 [source]
 root_patterns = [
     "src/",
+    "examples/",
 ]
 
 [anonymous-telemetry]

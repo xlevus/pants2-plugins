@@ -1,0 +1,5 @@
+# InfloAi flake8 config
+
+[flake8]
+max-line-length = 99
+extend-ignore = E203
