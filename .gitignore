@@ -3,3 +3,5 @@
 /dist/
 /.pids
 /.pants.workdir.file_lock*
+
+build-support/.venv
