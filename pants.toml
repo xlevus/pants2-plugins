@@ -13,6 +13,9 @@ backend_packages = [
     "pants.backend.shell.lint.shfmt",
     "pants.backend.shell.lint.shellcheck",
     "xlvs.pants.docker",
+    "xlvs.pants.publish",
+    "xlvs.pants.publish.python",
+    "xlvs.pants.publish.docker",
  ]
 
 plugins = []

@@ -15,7 +15,6 @@ from pants.engine.target import TransitiveTargets, TransitiveTargetsRequest
 from pants.engine.unions import UnionRule
 from pants.util.logging import LogLevel
 
-
 from .targets import (
     DockerDependenciesField,
     DockerImageName,
@@ -64,6 +63,7 @@ async def get_built_dependencies(
         BuiltPackageDependencies,
         BuildPackageDependenciesRequest(field=field_set.dependencies),
     )
+
     pkg_digest = await Get(Digest, MergeDigests(pkg.digest for pkg in built_packages))
 
     transitive_targets = await Get(
