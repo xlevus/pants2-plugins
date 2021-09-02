@@ -8,7 +8,6 @@ pex_binary(
     entry_point="hello.py:main",
 )
 
-
 docker_image(
     name="image",
     sources=["Dockerfile"],
@@ -16,5 +15,5 @@ docker_image(
     image_version="latest",
     dependencies=[
         ":hello-world",
-    ]
+    ],
 )
