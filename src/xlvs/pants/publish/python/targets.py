@@ -15,15 +15,21 @@ class PypiRepositoryUrl(StringField):
 
 
 class PypiRepositoryUsernameVar(StringField):
-    alias = "username_env"
-    help = "The environment variable containing the username for this repository."
-    default = "TWINE_USERNAME"
+    alias = "username"
+    help = (
+        "The username for this repository."
+        "Suppirting ${BASH_STYLE} environment interpolation."
+    )
+    default = "${TWINE_USERNAME}"
 
 
 class PypiRepositoryPasswordVar(StringField):
-    alias = "password_env"
-    help = "The environment variable containing the password for this repository."
-    default = "TWINE_PASSWORD"
+    alias = "password"
+    help = (
+        "The password for this repository. "
+        "Supporting ${BASH_STYLE} environment interpolation."
+    )
+    default = "${TWINE_PASSWORD}"
 
 
 class PypiRepositoryTarget(PublishDestinationTarget):

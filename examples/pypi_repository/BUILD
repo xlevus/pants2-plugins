@@ -12,8 +12,8 @@ pypi_repository(
 pypi_repository(
     name="privatepypi",
     repository_url="https://foo:bar@example.com/",
-    username_env="PRIVATE_TWINE_USERNAME",
-    password_env="PRIVATE_TWINE_PASSWORD",
+    username="${PRIVATE_TWINE_USERNAME}",
+    password="${PRIVATE_TWINE_PASSWORD}",
 )
 
 python_library(name="lib", sources=[])

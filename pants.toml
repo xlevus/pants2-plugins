@@ -12,6 +12,7 @@ backend_packages = [
     "pants.backend.shell",
     "pants.backend.shell.lint.shfmt",
     "pants.backend.shell.lint.shellcheck",
+    "xlvs.pants.core",
     "xlvs.pants.docker",
     "xlvs.pants.publish",
     "xlvs.pants.publish.python",

@@ -21,6 +21,7 @@ from pants.engine.unions import UnionRule
 from pants.backend.python.goals.setup_py import PythonDistributionFieldSet
 from pants.python.python_setup import PythonSetup
 from pants.util.frozendict import FrozenDict
+from xlvs.pants.core.env_strings import EnvironmentStringRequest
 
 from xlvs.pants.publish.python.subsystem import Twine
 
@@ -74,16 +75,18 @@ class PublishCall:
 
 @rule
 async def get_repository(target: PypiRepositoryTarget) -> PypiRepository:
-    username_var = target[PypiRepositoryUsernameVar].value
-    password_var = target[PypiRepositoryPasswordVar].value
-
     env = await Get(
         Environment,
-        EnvironmentRequest([username_var, password_var]),
+        EnvironmentStringRequest(
+            {
+                "username": target[PypiRepositoryUsernameVar].value,
+                "password": target[PypiRepositoryPasswordVar].value,
+            }
+        ),
     )
     return PypiRepository(
-        env.get(username_var),
-        env.get(password_var),
+        env.get("username"),
+        env.get("password"),
         target[PypiRepositoryName].value,
         target[PypiRepositoryUrl].value,
     )
