@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Dict, OrderedDict
 
 from pants.engine.environment import Environment, EnvironmentRequest
-from pants.engine.rules import Get, collect_rules, goal_rule, rule
+from pants.engine.rules import Get, collect_rules, rule
 from pants.util.frozendict import FrozenDict
 from pants.util.meta import frozen_after_init
 

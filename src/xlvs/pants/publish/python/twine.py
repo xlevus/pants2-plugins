@@ -1,117 +1,72 @@
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from pants.engine.environment import Environment
 
-from pants.core.goals.package import BuiltPackage
 from pants.backend.python.util_rules.pex import (
     PexRequest,
     PexRequirements,
     VenvPex,
     VenvPexProcess,
 )
-from pants.engine.addresses import Addresses, UnparsedAddressInputs
-from pants.engine.environment import Environment, EnvironmentRequest
-from pants.engine.internals.selectors import MultiGet
+from pants.engine.environment import Environment
 from pants.engine.process import Process, ProcessResult
-from pants.engine.target import (
-    FieldSet,
-    Targets,
-)
+
 from pants.engine.rules import collect_rules, rule, Get
-from pants.engine.unions import UnionRule
-from pants.backend.python.goals.setup_py import PythonDistributionFieldSet
-from pants.python.python_setup import PythonSetup
+
 from pants.util.frozendict import FrozenDict
+
 from xlvs.pants.core.env_strings import EnvironmentStringRequest
 
 from xlvs.pants.publish.python.subsystem import Twine
 
-from ..publish_subsystem import PublishRequest, PublishedPackage, PublishedPackageSet
-from .targets import (
+
+from pants.engine.rules import collect_rules, rule
+from pants.util.ordered_set import FrozenOrderedSet
+from xlvs.pants.core.env_strings import EnvironmentStringRequest
+
+from xlvs.pants.publish.publish_subsystem import PublishedPackage
+
+from xlvs.pants.publish.python.targets import (
+    PypiPublishRequest,
     PypiRepositoryName,
-    PypiRepositoryPasswordVar,
+    PypiRepositoryPassword,
     PypiRepositoryTarget,
     PypiRepositoryUrl,
-    PypiRepositoryUsernameVar,
-    Repositories,
+    PypiRepositoryUsername,
 )
 
 
 @dataclass(frozen=True)
-class TwineFieldSet(FieldSet):
-    required_fields = (Repositories,)
-
-
-class TwineRequest(PublishRequest):
-    publish_field_set_type = TwineFieldSet
-    package_field_set_type = PythonDistributionFieldSet
-
-
-@dataclass(frozen=True)
-class PypiRepository:
-    username: str
-    password: str
-    repository: Optional[str] = None
-    url: Optional[str] = None
-
-    def __str__(self):
-        if self.url:
-            return self.url
-        return self.repository
-
-
-@dataclass(frozen=True)
-class PypiRepositorySet:
-    repositories: Tuple[PypiRepository]
-
-    def __iter__(self):
-        return iter(self.repositories)
-
-
-@dataclass(frozen=True)
-class PublishCall:
-    built_package: BuiltPackage
-    repository: PypiRepository
+class TwineCallArgs:
+    args: FrozenOrderedSet
+    env: FrozenDict[str, str]
 
 
 @rule
-async def get_repository(target: PypiRepositoryTarget) -> PypiRepository:
+async def twine_call_args(target: PypiRepositoryTarget) -> TwineCallArgs:
     env = await Get(
         Environment,
         EnvironmentStringRequest(
             {
-                "username": target[PypiRepositoryUsernameVar].value,
-                "password": target[PypiRepositoryPasswordVar].value,
+                "TWINE_USERNAME": target[PypiRepositoryUsername].value,
+                "TWINE_PASSWORD": target[PypiRepositoryPassword].value,
             }
         ),
     )
-    return PypiRepository(
-        env.get("username"),
-        env.get("password"),
-        target[PypiRepositoryName].value,
-        target[PypiRepositoryUrl].value,
-    )
+
+    args = ["--non-interactive"]
+
+    repo_name = target[PypiRepositoryName].value
+    repo_url = target[PypiRepositoryUrl].value
+    if repo_url:
+        args += ["--repository-url", repo_url]
+    else:
+        args += ["-r", repo_name]
+
+    return TwineCallArgs(FrozenOrderedSet(args), env)
 
 
 @rule
-async def get_repositories(field_set: TwineFieldSet) -> PypiRepositorySet:
-    (publish_target,) = await Get(Targets, Addresses([field_set.address]))
-
-    repository_targets = await Get(
-        Targets,
-        UnparsedAddressInputs,
-        publish_target[Repositories].to_unparsed_address_inputs(),
-    )
-
-    return PypiRepositorySet(
-        await MultiGet(
-            Get(PypiRepository, PypiRepositoryTarget, target)
-            for target in repository_targets
-        )
-    )
-
-
-@rule
-async def publish(twine: Twine, call: PublishCall) -> PublishedPackage:
+async def publish_pypi(request: PypiPublishRequest, twine: Twine) -> PublishedPackage:
     twine_pex = await Get(
         VenvPex,
         PexRequest(
@@ -122,56 +77,29 @@ async def publish(twine: Twine, call: PublishCall) -> PublishedPackage:
         ),
     )
 
-    paths = [artifact.relpath for artifact in call.built_package.artifacts]
-
-    argv = ["upload"]
-
-    if call.repository.url:
-        argv.extend(["--repository-url", call.repository.url])
-    elif call.repository.repository:
-        argv.extend(["-r", call.repository.repository])
+    call_args = await Get(TwineCallArgs, PypiRepositoryTarget, request.publish_target)
+    paths = [artifact.relpath for artifact in request.built_package.artifacts]
 
     process = await Get(
         Process,
         VenvPexProcess,
         VenvPexProcess(
             twine_pex,
-            argv=argv + paths,
-            input_digest=call.built_package.digest,
-            extra_env=FrozenDict(
-                {
-                    "TWINE_NON_INTERACTIVE": "true",
-                    "TWINE_USERNAME": call.repository.username,
-                    "TWINE_PASSWORD": call.repository.password,
-                }
-            ),
-            description=f"Publishing {', '.join(paths)} to {call.repository}.",
+            argv=["upload", *call_args.args, *paths],
+            input_digest=request.built_package.digest,
+            extra_env=call_args.env,
+            description=f"Publishing {', '.join(paths)} to {request.publish_target.address}.",
         ),
     )
 
     await Get(ProcessResult, Process, process)
 
-    return PublishedPackage(call.built_package)
-
-
-@rule
-async def publish_twine(request: TwineRequest) -> PublishedPackageSet:
-    print("TWINE", request)
-
-    repositories = await Get(
-        PypiRepositorySet, TwineFieldSet, request.publish_field_set
-    )
-
-    return PublishedPackageSet(
-        await MultiGet(
-            Get(PublishedPackage, PublishCall(request.built_package, repository))
-            for repository in repositories
-        )
+    return PublishedPackage(
+        package=request.built_package, publish_target=request.publish_target.address
     )
 
 
 def rules():
     return [
         *collect_rules(),
-        UnionRule(PublishRequest, TwineRequest),
     ]

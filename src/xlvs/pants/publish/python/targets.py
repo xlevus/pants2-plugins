@@ -1,6 +1,9 @@
 from pants.engine.target import COMMON_TARGET_FIELDS, StringField
 
-from xlvs.pants.publish.targets import BaseRepositoriesField, PublishDestinationTarget
+from xlvs.pants.publish.targets import (
+    PublishRequest,
+    PublishTarget,
+)
 
 
 class PypiRepositoryName(StringField):
@@ -11,10 +14,13 @@ class PypiRepositoryName(StringField):
 
 class PypiRepositoryUrl(StringField):
     alias = "repository_url"
-    help = "The pypi repository url to upload the package to."
+    help = (
+        "The pypi repository url to upload the package to."
+        "Takes priority over `repository`."
+    )
 
 
-class PypiRepositoryUsernameVar(StringField):
+class PypiRepositoryUsername(StringField):
     alias = "username"
     help = (
         "The username for this repository."
@@ -23,7 +29,7 @@ class PypiRepositoryUsernameVar(StringField):
     default = "${TWINE_USERNAME}"
 
 
-class PypiRepositoryPasswordVar(StringField):
+class PypiRepositoryPassword(StringField):
     alias = "password"
     help = (
         "The password for this repository. "
@@ -32,18 +38,19 @@ class PypiRepositoryPasswordVar(StringField):
     default = "${TWINE_PASSWORD}"
 
 
-class PypiRepositoryTarget(PublishDestinationTarget):
+class PypiPublishRequest(PublishRequest):
+    pass
+
+
+class PypiRepositoryTarget(PublishTarget):
     alias = "pypi_repository"
     help = "A pypi repository."
 
     core_fields = (
-        *COMMON_TARGET_FIELDS,
+        *PublishTarget.core_fields,
         PypiRepositoryName,
         PypiRepositoryUrl,
-        PypiRepositoryUsernameVar,
-        PypiRepositoryPasswordVar,
+        PypiRepositoryUsername,
+        PypiRepositoryPassword,
     )
-
-
-class Repositories(BaseRepositoriesField):
-    destination_type = PypiRepositoryTarget
+    publish_request_type = PypiPublishRequest

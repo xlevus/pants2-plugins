@@ -1,6 +1,12 @@
 from pants.engine.target import COMMON_TARGET_FIELDS, StringField
+from xlvs.pants.docker.targets import DockerImageName, DockerImageVersion
 
-from xlvs.pants.publish.targets import BaseRepositoriesField, PublishDestinationTarget
+from xlvs.pants.publish.targets import (
+    PublishRequest,
+    PublishTargetField,
+    PublishTarget,
+    PublishTargetFieldSet,
+)
 
 
 class DockerRepositoryUrl(StringField):
@@ -8,7 +14,19 @@ class DockerRepositoryUrl(StringField):
     help = "URL of container registry."
 
 
-class DockerRepositoryTarget(PublishDestinationTarget):
+class DockerPublishFieldSet(PublishTargetFieldSet):
+    required_fields = (
+        *PublishTargetFieldSet.required_fields,
+        DockerImageName,
+        DockerImageVersion,
+    )
+
+
+class DockerPublishRequest(PublishRequest):
+    pass
+
+
+class DockerRepositoryTarget(PublishTarget):
     alias = "container_registry"
     help = "A docker container registry."
 
@@ -16,7 +34,5 @@ class DockerRepositoryTarget(PublishDestinationTarget):
         *COMMON_TARGET_FIELDS,
         DockerRepositoryUrl,
     )
-
-
-class DockerRepositoriesField(BaseRepositoriesField):
-    destination_target = DockerRepositoryTarget
+    publish_request_type = DockerPublishRequest
+    publishee_fieldset_type = DockerPublishFieldSet

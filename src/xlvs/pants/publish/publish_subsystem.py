@@ -1,15 +1,24 @@
-from abc import ABC, abstractclassmethod
 from dataclasses import dataclass
-from typing import ClassVar, Iterable, List, Tuple, Type, TypeVar, cast
+from typing import Iterable, List, Tuple, Type, cast
 
+from pants.build_graph.address import Address
 from pants.core.goals.package import BuiltPackage, PackageFieldSet
+from pants.engine.addresses import UnparsedAddressInputs
 from pants.engine.console import Console
-from pants.engine.fs import Digest, MergeDigests
 from pants.engine.goal import Goal, GoalSubsystem
 from pants.engine.internals.selectors import MultiGet
-from pants.engine.rules import Get, collect_rules, goal_rule, rule
-from pants.engine.target import FieldSet, Targets
-from pants.engine.unions import UnionMembership, union
+from pants.engine.rules import Get, collect_rules, goal_rule
+from pants.engine.target import Target, Targets
+from pants.engine.unions import UnionMembership
+from pants.util.meta import frozen_after_init
+from pants.util.ordered_set import FrozenOrderedSet
+
+from xlvs.pants.publish.targets import (
+    PublishRequest,
+    PublishTarget,
+    PublishTargetField,
+    PublishTargetFieldSet,
+)
 
 
 class PublishSubsystem(GoalSubsystem):
@@ -21,51 +30,31 @@ class Publish(Goal):
     subsystem_cls = PublishSubsystem
 
 
-class PublishFieldSet(FieldSet):
-    pass
-
-
-_FS = TypeVar("_FS", bound=PublishFieldSet)
-
-
-@union
-@dataclass(frozen=True)
-class PublishRequest:
-    publish_field_set_type: ClassVar[Type[_FS]]
-    package_field_set_type: ClassVar[Type[PackageFieldSet]]
-
-    built_package: BuiltPackage
-    publish_field_set: _FS
-
-
-@dataclass(frozen=True)
-class PublishSetup:
-    request_type: Type[PublishRequest]
-    package_field_set: PackageFieldSet
-    publish_field_set: PublishFieldSet
-
-
 @dataclass(frozen=True)
 class PublishedPackage:
     package: BuiltPackage
+    publish_target: Address
 
 
-@dataclass(frozen=True)
+@frozen_after_init
+@dataclass(unsafe_hash=True)
 class PublishedPackageSet:
-    publishes: Tuple[PublishedPackage]
+    publishes: FrozenOrderedSet[PublishedPackage]
+
+    def __init__(self, published_packages: Iterable[PublishedPackage]):
+        self.publishes = FrozenOrderedSet(published_packages)
 
 
-@rule
-async def request_publish(setup: PublishSetup) -> PublishedPackageSet:
-    built_package = await Get(BuiltPackage, PackageFieldSet, setup.package_field_set)
-
-    published_package = await Get(
-        PublishedPackageSet,
-        PublishRequest,
-        setup.request_type(built_package, setup.publish_field_set),
+def _can_package(target: Target, union_membership: UnionMembership):
+    package_request_types = cast(
+        Iterable[Type[PackageFieldSet]], union_membership[PackageFieldSet]
     )
 
-    return published_package
+    for fieldset in package_request_types:
+        if fieldset.is_applicable(target):
+            return fieldset
+
+    return False
 
 
 @goal_rule
@@ -74,43 +63,81 @@ async def publish(
     targets: Targets,
     union_membership: UnionMembership,
 ) -> Publish:
-    publish_request_types = cast(
-        Iterable[Type[PublishRequest]], union_membership[PublishRequest]
-    )
-    package_request_types = cast(
-        Iterable[Type[PackageFieldSet]], union_membership[PackageFieldSet]
-    )
+    publishable_targets: List[Tuple[Target, PackageFieldSet]] = []
 
-    setups: List[PublishSetup] = []
-
+    # Retrieve publishable targets and their package type.
     for target in targets:
-        for request_type in publish_request_types:
-            if request_type.publish_field_set_type.is_applicable(target):
-                if request_type.package_field_set_type not in package_request_types:
-                    console.print_stderr(
-                        f"{target.address} is not a packageable target."
-                    )
-                    return Publish(exit_code=1)
-
-                setups.append(
-                    PublishSetup(
-                        request_type,
-                        request_type.package_field_set_type.create(target),
-                        request_type.publish_field_set_type.create(target),
-                    )
+        if PublishTargetFieldSet.is_applicable(target):
+            package_fieldset = _can_package(target, union_membership)
+            if package_fieldset:
+                publishable_targets.append((target, package_fieldset))
+            else:
+                console.print_stderr(
+                    f"Unable to publish {target.address} as it is not a packageable target."
                 )
+                return Publish(exit_code=1)
 
-    published_packages = await MultiGet(
-        Get(
-            PublishedPackageSet,
-            PublishSetup,
-            setup,
-        )
-        for setup in setups
+    # Get the publish targets (destination)
+    publish_targets_set = cast(
+        Iterable[Iterable[PublishTarget]],
+        await MultiGet(
+            Get(
+                Targets,
+                UnparsedAddressInputs,
+                publishable[PublishTargetField].to_unparsed_address_inputs(),
+            )
+            for (publishable, _) in publishable_targets
+        ),
     )
+
+    print(publish_targets_set)
+
+    # get the built packages.
+    built_packages = await MultiGet(
+        Get(BuiltPackage, PackageFieldSet, package_fieldset.create(target))
+        for (target, package_fieldset) in publishable_targets
+    )
+
+    # Build a list of requests, ensuring that the publishable is valid for the
+    # publish target. Error if not.
+    requests: List[PublishRequest] = []
+
+    for (target, _), publish_targets, built_package in zip(
+        publishable_targets, publish_targets_set, built_packages
+    ):
+        for publish_target in publish_targets:
+            if not publish_target.publishee_fieldset_type.is_applicable(target):
+                console.print_stderr(
+                    f"Cannot publish {target.address} to {publish_target.address}."
+                )
+                return Publish(exit_code=1)
+            fieldset = publish_target.publishee_fieldset_type.create(target)
+
+            console.print_stdout(
+                f"Publishing '{target.address}' to '{publish_target.address}'."
+            )
+
+            requests.append(
+                publish_target.publish_request_type(
+                    built_package,
+                    fieldset,
+                    publish_target,
+                )
+            )
+
+    print(requests[0].publish_target.__class__)
+
+    packages = await MultiGet(
+        Get(PublishedPackage, PublishRequest, request) for request in requests
+    )
+
+    # ???
+    PublishedPackageSet(packages)
 
     return Publish(exit_code=1)
 
 
 def rules():
-    return collect_rules()
+    return [
+        *collect_rules(),
+    ]

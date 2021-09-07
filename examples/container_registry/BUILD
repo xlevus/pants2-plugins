@@ -1,6 +1,6 @@
 container_registry(
-    name="exmaple-registry",
-    registry="example.com/docker/registry",
+    name="container-store",
+    registry="docker-registry.example.com:443",
 )
 
 docker_image(
@@ -8,7 +8,7 @@ docker_image(
     sources=["Dockerfile"],
     image_name="hello",
     image_version="latest",
-    repositories=[
-        ":example-registry",
+    publish_targets=[
+        ":container-store",
     ],
 )

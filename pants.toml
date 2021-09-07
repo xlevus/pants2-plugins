@@ -17,6 +17,7 @@ backend_packages = [
     "xlvs.pants.publish",
     "xlvs.pants.publish.python",
     "xlvs.pants.publish.docker",
+    "xlvs.pants.publish.aws_s3",
  ]
 
 plugins = []
