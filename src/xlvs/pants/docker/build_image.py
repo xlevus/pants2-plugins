@@ -6,6 +6,7 @@ from pants.core.goals.test import (
     BuiltPackageDependencies,
 )
 from pants.core.util_rules.source_files import SourceFiles, SourceFilesRequest
+from pants.engine.environment import Environment, EnvironmentRequest
 from pants.engine.fs import Digest, MergeDigests
 from pants.engine.internals.selectors import Get
 from pants.engine.process import BinaryPathRequest, BinaryPaths, Process, ProcessResult
@@ -62,6 +63,7 @@ async def get_built_dependencies(
         BuiltPackageDependencies,
         BuildPackageDependenciesRequest(field=field_set.dependencies),
     )
+
     pkg_digest = await Get(Digest, MergeDigests(pkg.digest for pkg in built_packages))
 
     transitive_targets = await Get(
@@ -85,11 +87,14 @@ async def get_built_dependencies(
 
     tag = f"{field_set.image_name.value}:{field_set.image_version.value}"
 
+    env = await Get(Environment, EnvironmentRequest(["DOCKER_HOST"]))
+
     result = await Get(
         ProcessResult,
         Process(
             argv=[docker.path, "build", "-f", dockerfile, "-t", tag, "."],
             input_digest=digest,
+            env=env,
             description=f"Building docker image '{tag}'.",
         ),
     )
